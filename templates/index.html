@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="color-scheme" content="light dark"/>
+<title>OMRScan — Grade answer sheets</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232340C8'/%3E%3Ccircle cx='16' cy='16' r='7' fill='white'/%3E%3C/svg%3E"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+/* ── Tokens ─────────────────────────────────────────────────────────────────
+   Palette is taken from the work itself: cool printed paper, ballpoint-blue ink,
+   and three marking colours that match the annotated scan overlay.            */
+:root{
+  --paper:#F1F3F8;
+  --card:#FFFFFF;
+  --sunk:#E9ECF3;
+  --ink:#0F1A33;
+  --graphite:#5A6478;
+  --line:#D9DEE8;
+  --blue:#2340C8;
+  --blue-soft:#E6EAFB;
+  --on-blue:#FFFFFF;
+  --ok:#14804F;   --ok-soft:#E1F3EA;
+  --bad:#C7342E;  --bad-soft:#FBE7E5;
+  --warn:#9A6208; --warn-soft:#FBF0D9;
+  --sans:'Bricolage Grotesque',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'DM Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  --r-panel:16px; --r-ctl:10px;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --paper:#0D1120; --card:#151B2D; --sunk:#1B2238;
+    --ink:#E8ECF7; --graphite:#929DB5; --line:#262F49;
+    --blue:#8196FF; --blue-soft:#202B5A; --on-blue:#0D1120;
+    --ok:#46D69B;  --ok-soft:#14302A;
+    --bad:#FF7A72; --bad-soft:#3A1D22;
+    --warn:#F3BA4E; --warn-soft:#35290F;
+  }
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+[hidden]{display:none!important}
+html{scroll-behavior:smooth}
+body{
+  background:var(--paper);color:var(--ink);font-family:var(--sans);
+  font-size:15px;line-height:1.5;min-height:100vh;
+  -webkit-font-smoothing:antialiased;
+}
+button,input,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:6px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ── Header ── */
+header{
+  display:flex;align-items:center;gap:14px;
+  padding:14px 32px;background:var(--card);border-bottom:1px solid var(--line);
+  position:sticky;top:0;z-index:20;
+}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.25rem;letter-spacing:-.02em}
+.brand svg{display:block}
+.brand small{font-weight:500;font-size:.8rem;color:var(--graphite);letter-spacing:0;margin-left:2px}
+.hdr-note{margin-left:auto;font-size:.82rem;color:var(--graphite)}
+
+/* ── Layout ── */
+main{
+  max-width:1440px;margin:0 auto;padding:28px 28px 64px;
+  display:grid;grid-template-columns:minmax(0,580px) minmax(0,1fr);gap:24px;align-items:start;
+}
+.col{display:flex;flex-direction:column;gap:20px;min-width:0}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--r-panel);padding:22px}
+.panel h2{font-size:1.05rem;font-weight:650;letter-spacing:-.01em}
+.panel-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:14px}
+.hint{font-size:.82rem;color:var(--graphite)}
+
+/* ── Segmented control ── */
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;background:var(--sunk);border-radius:var(--r-ctl);margin-bottom:14px}
+.seg button{
+  border:0;background:transparent;padding:8px 10px;border-radius:7px;cursor:pointer;
+  font-weight:600;font-size:.88rem;color:var(--graphite);transition:background .15s,color .15s;
+}
+.seg button[aria-selected=true]{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(15,26,51,.14)}
+
+/* ── Drop zone ── */
+.drop{
+  position:relative;display:block;text-align:center;cursor:pointer;
+  border:1.5px dashed var(--line);border-radius:12px;padding:26px 16px;
+  transition:border-color .15s,background .15s;
+}
+.drop:hover,.drop.drag,.drop:focus-within{border-color:var(--blue);background:var(--blue-soft)}
+.drop input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.drop svg{color:var(--blue);margin-bottom:8px}
+.drop strong{display:block;font-weight:600}
+.drop span{font-size:.82rem;color:var(--graphite)}
+.preview{display:none;max-width:100%;max-height:220px;margin:14px auto 0;border-radius:8px;border:1px solid var(--line)}
+.filelist{margin-top:12px;max-height:112px;overflow-y:auto;font-family:var(--mono);font-size:.76rem;color:var(--graphite);line-height:1.8}
+.filelist-count{font-family:var(--sans);font-weight:600;color:var(--ink);margin-bottom:2px}
+.sample{display:inline-block;margin-top:12px;font-size:.83rem;color:var(--blue);font-weight:550;text-decoration:none}
+.sample:hover{text-decoration:underline}
+.err{
+  display:none;margin-top:12px;padding:10px 12px;border-radius:var(--r-ctl);
+  background:var(--bad-soft);color:var(--bad);font-size:.86rem;font-weight:500;
+}
+
+/* ── Answer key ── */
+.tools{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.chip-btn{
+  border:1px solid var(--line);background:var(--card);border-radius:999px;
+  padding:4px 12px;font-size:.8rem;font-weight:550;cursor:pointer;color:var(--graphite);
+  transition:border-color .12s,color .12s,background .12s;
+}
+.chip-btn:hover{border-color:var(--blue);color:var(--blue)}
+.chip-btn.danger:hover{border-color:var(--bad);color:var(--bad)}
+.quick{margin-bottom:12px}
+.quick label{display:block;font-size:.8rem;font-weight:600;margin-bottom:4px}
+.quick textarea{
+  width:100%;resize:vertical;min-height:44px;max-height:120px;
+  background:var(--paper);border:1px solid var(--line);border-radius:var(--r-ctl);
+  padding:8px 10px;font-family:var(--mono);font-size:.82rem;letter-spacing:.12em;
+}
+.quick textarea:focus{border-color:var(--blue);outline:none;box-shadow:0 0 0 3px var(--blue-soft)}
+.quick .hint{margin-top:4px}
+
+.meter{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-size:.82rem;color:var(--graphite)}
+.meter .bar{flex:1;height:5px;border-radius:3px;background:var(--sunk);overflow:hidden}
+.meter .bar i{display:block;height:100%;width:0;background:var(--blue);border-radius:3px;transition:width .25s}
+.meter output{font-family:var(--mono);color:var(--ink);min-width:58px;text-align:right}
+
+.sheet{
+  max-height:440px;overflow:auto;border:1px solid var(--line);border-radius:12px;
+  background:var(--paper);
+}
+.sheet-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));min-width:468px}
+.sheet-col{padding:0 8px 8px;border-left:1px solid var(--line)}
+.sheet-col:first-child{border-left:0}
+.sheet-col-head{
+  position:sticky;top:0;z-index:2;background:var(--paper);
+  display:grid;grid-template-columns:24px repeat(4,1fr);gap:2px;
+  padding:8px 0 6px;font-family:var(--mono);font-size:.68rem;color:var(--graphite);text-align:center;
+  border-bottom:1px solid var(--line);margin-bottom:4px;
+}
+.qrow{display:grid;grid-template-columns:24px repeat(4,1fr);gap:2px;align-items:center;height:28px}
+.qn{font-family:var(--mono);font-size:.7rem;color:var(--graphite);text-align:right;padding-right:6px}
+.qrow.done .qn{color:var(--ink);font-weight:500}
+.bub{
+  width:22px;height:22px;margin:0 auto;border-radius:50%;cursor:pointer;
+  border:1.5px solid var(--line);background:var(--card);
+  display:grid;place-items:center;font-family:var(--mono);font-size:.62rem;color:var(--graphite);
+  transition:background .1s,border-color .1s,color .1s,transform .08s;
+}
+.bub:hover{border-color:var(--blue);color:var(--blue)}
+.bub:active{transform:scale(.9)}
+.bub[aria-pressed=true]{background:var(--blue);border-color:var(--blue);color:var(--on-blue);font-weight:500}
+
+/* ── Buttons ── */
+.btn{
+  width:100%;border:0;border-radius:var(--r-ctl);padding:13px 16px;cursor:pointer;
+  font-weight:650;font-size:.97rem;transition:opacity .15s,transform .08s,box-shadow .15s;
+}
+.btn:active:not(:disabled){transform:scale(.99)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-primary{background:var(--blue);color:var(--on-blue)}
+.btn-primary:hover:not(:disabled){box-shadow:0 6px 18px -6px var(--blue)}
+.btn-quiet{background:var(--sunk);color:var(--ink)}
+.btn-quiet:hover:not(:disabled){background:var(--line)}
+
+.ready{list-style:none;margin:16px 0 12px;display:grid;gap:6px;font-size:.85rem;color:var(--graphite)}
+.ready li{display:flex;align-items:center;gap:8px}
+.ready .dot{width:16px;height:16px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;flex:none}
+.ready li.ok{color:var(--ink)}
+.ready li.ok .dot{background:var(--ok);border-color:var(--ok)}
+.ready li.ok .dot::after{content:'';width:4px;height:7px;border:solid #fff;border-width:0 1.8px 1.8px 0;transform:rotate(45deg) translate(-.5px,-.5px)}
+.after-scan{display:grid;gap:8px;margin-top:10px}
+
+/* ── Results column ── */
+.empty{text-align:center;padding:56px 24px}
+.empty svg{color:var(--line);margin-bottom:18px}
+.empty h2{margin-bottom:6px}
+.empty p{color:var(--graphite);max-width:34ch;margin:0 auto}
+
+#loading{display:none}
+.scanning{text-align:center;padding:56px 24px}
+.scanning .track{width:220px;height:5px;margin:0 auto 16px;background:var(--sunk);border-radius:3px;overflow:hidden}
+.scanning .track i{display:block;width:40%;height:100%;background:var(--blue);border-radius:3px;animation:slide 1.1s ease-in-out infinite}
+@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(260%)}}
+
+.verdict{display:grid;grid-template-columns:auto 1fr;gap:26px;align-items:center}
+.ring{position:relative;width:136px;height:136px}
+.ring svg{display:block;transform:rotate(-90deg)}
+.ring .trk{stroke:var(--sunk)}
+.ring .val{stroke-linecap:round;transition:stroke-dashoffset .9s cubic-bezier(.2,.7,.2,1)}
+.ring-label{position:absolute;inset:0;display:grid;place-content:center;text-align:center}
+.ring-label b{font-size:2rem;font-weight:700;letter-spacing:-.03em;line-height:1}
+.ring-label span{font-size:.78rem;color:var(--graphite);margin-top:4px}
+.stats{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));
+  border:1px solid var(--line);border-radius:12px;overflow:hidden;
+}
+.stat{padding:12px 14px;border-left:1px solid var(--line);border-top:1px solid var(--line);margin:-1px 0 0 -1px}
+.stat b{display:block;font-size:1.45rem;font-weight:650;letter-spacing:-.02em;line-height:1.15}
+.stat span{font-size:.78rem;color:var(--graphite)}
+.stat.ok b{color:var(--ok)} .stat.bad b{color:var(--bad)} .stat.warn b{color:var(--warn)}
+.stat b.mono{font-family:var(--mono);font-weight:500;font-size:1.2rem;letter-spacing:.04em;padding-top:2px}
+
+.notice{margin-top:16px;padding:10px 12px;border-radius:var(--r-ctl);background:var(--warn-soft);color:var(--warn);font-size:.85rem;font-weight:500}
+
+.scan-img{margin-top:20px}
+.scan-img button{display:block;width:100%;border:1px solid var(--line);border-radius:12px;padding:0;overflow:hidden;cursor:zoom-in;background:var(--sunk)}
+.scan-img img{display:block;width:100%;height:auto}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;font-size:.8rem;color:var(--graphite)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+
+.map{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.map-col{display:grid;gap:3px;align-content:start}
+.mc{
+  display:flex;align-items:center;gap:6px;height:26px;padding:0 8px;border-radius:6px;
+  font-family:var(--mono);font-size:.72rem;border-left:3px solid transparent;
+}
+.mc i{font-style:normal;color:var(--graphite);width:20px;text-align:right}
+.mc b{font-weight:500}
+.mc small{margin-left:auto;font-size:.68rem;opacity:.85}
+.mc.correct{background:var(--ok-soft);color:var(--ok);border-color:var(--ok)}
+.mc.wrong{background:var(--bad-soft);color:var(--bad);border-color:var(--bad)}
+.mc.blank{background:var(--warn-soft);color:var(--warn);border-color:var(--warn)}
+.mc.correct i,.mc.wrong i,.mc.blank i{color:inherit;opacity:.7}
+
+details.more{margin-top:18px;border-top:1px solid var(--line);padding-top:14px}
+details.more summary{cursor:pointer;font-weight:600;font-size:.9rem;list-style:none;display:flex;align-items:center;gap:8px}
+details.more summary::-webkit-details-marker{display:none}
+details.more summary::before{content:'';width:7px;height:7px;border:solid var(--graphite);border-width:0 1.8px 1.8px 0;transform:rotate(-45deg);transition:transform .15s}
+details.more[open] summary::before{transform:rotate(45deg)}
+.filters{display:flex;gap:6px;margin:12px 0}
+.chip-btn[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+
+/* ── Tables ── */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.84rem}
+th{
+  text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);
+  color:var(--graphite);font-size:.78rem;font-weight:600;white-space:nowrap;
+}
+th button{border:0;background:none;cursor:pointer;font-weight:600;font-size:.78rem;color:inherit;padding:0}
+th button:hover{color:var(--ink)}
+th[aria-sort] button::after{content:' ↑'}
+th[aria-sort=descending] button::after{content:' ↓'}
+td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:var(--paper)}
+td.mono,.mono{font-family:var(--mono);font-size:.8rem}
+td.num{text-align:right} th.num{text-align:right}
+.fname{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:.74rem;font-weight:600}
+.pill.correct{background:var(--ok-soft);color:var(--ok)}
+.pill.wrong{background:var(--bad-soft);color:var(--bad)}
+.pill.blank,.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pbar{display:flex;align-items:center;gap:8px;min-width:110px}
+.pbar i{display:block;height:6px;border-radius:3px;background:var(--sunk);flex:1;overflow:hidden}
+.pbar i::after{content:'';display:block;height:100%;width:var(--w);background:var(--c);border-radius:3px}
+.link-btn{border:1px solid var(--line);background:var(--card);border-radius:7px;padding:3px 10px;font-size:.78rem;font-weight:550;cursor:pointer}
+.link-btn:hover{border-color:var(--blue);color:var(--blue)}
+.table-tools{display:flex;gap:10px;align-items:center;margin-bottom:12px}
+.table-tools input{
+  flex:1;max-width:280px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-ctl);padding:7px 11px;font-size:.88rem;
+}
+.table-tools input:focus{border-color:var(--blue);outline:none;box-shadow:0 0 0 3px var(--blue-soft)}
+
+/* ── Dialog ── */
+dialog{
+  margin:auto;border:1px solid var(--line);border-radius:var(--r-panel);background:var(--card);color:var(--ink);
+  width:min(860px,94vw);max-height:88vh;padding:0;overflow:hidden;
+}
+dialog::backdrop{background:rgba(8,12,24,.62)}
+dialog[open]{display:flex;flex-direction:column}
+.dlg-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line)}
+.dlg-head h3{font-size:1rem;font-weight:650}
+.dlg-body{padding:20px;overflow:auto}
+.x{border:0;background:var(--sunk);width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:1rem;line-height:1;color:var(--graphite)}
+.x:hover{color:var(--ink)}
+.dlg-body img{display:block;width:100%;height:auto;border-radius:8px}
+
+/* ── Responsive ── */
+@media (max-width:1020px){
+  main{grid-template-columns:minmax(0,1fr);padding:18px 14px 48px}
+  header{padding:12px 16px}
+  .hdr-note{display:none}
+}
+@media (max-width:560px){
+  .verdict{grid-template-columns:1fr;justify-items:center}
+  .verdict .stats{width:100%}
+  .map{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .panel{padding:18px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+  html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="8" fill="var(--blue)"/>
+      <circle cx="16" cy="16" r="7" fill="var(--on-blue)"/>
+    </svg>
+    <span>OMRScan</span>
+  </div>
+  <div class="hdr-note">{{ num_questions }} questions · Chest number · Company · Excel export</div>
+</header>
+
+<main>
+
+<!-- ════════ Left: inputs ════════ -->
+<div class="col">
+
+  <section class="panel" aria-labelledby="h-sheets">
+    <div class="panel-head"><h2 id="h-sheets">Answer sheets</h2></div>
+
+    <div class="seg" role="tablist" aria-label="Upload mode">
+      <button role="tab" id="tabbtn-single" aria-selected="true"  aria-controls="tab-single">One sheet</button>
+      <button role="tab" id="tabbtn-bulk"   aria-selected="false" aria-controls="tab-bulk">Many sheets</button>
+    </div>
+
+    <div id="tab-single" role="tabpanel" aria-labelledby="tabbtn-single">
+      <label class="drop" id="dz-single">
+        <input type="file" id="fi-single" accept="image/*"/>
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+        <strong>Drop a sheet here or browse</strong>
+        <span>PNG, JPG, WEBP or BMP</span>
+        <img class="preview" id="preview-single" alt="Preview of the selected sheet"/>
+      </label>
+    </div>
+
+    <div id="tab-bulk" role="tabpanel" aria-labelledby="tabbtn-bulk" hidden>
+      <label class="drop" id="dz-bulk">
+        <input type="file" id="fi-bulk" accept="image/*" multiple/>
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+        <strong>Drop many sheets here or browse</strong>
+        <span>Select every image in the folder at once</span>
+      </label>
+      <div class="filelist" id="bulk-list"></div>
+    </div>
+
+    <a href="/sample_sheet" class="sample" download>Download a sample sheet to test with</a>
+    <div class="err" id="err-box" role="alert"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-key">
+    <div class="panel-head">
+      <h2 id="h-key">Answer key</h2>
+      <span class="hint" id="key-saved">Saved on this device</span>
+    </div>
+
+    <div class="tools">
+      <button class="chip-btn" data-fill="0">All A</button>
+      <button class="chip-btn" data-fill="1">All B</button>
+      <button class="chip-btn" data-fill="2">All C</button>
+      <button class="chip-btn" data-fill="3">All D</button>
+      <button class="chip-btn danger" id="clear-key">Clear key</button>
+    </div>
+
+    <div class="quick">
+      <label for="quick-entry">Type or paste the key</label>
+      <textarea id="quick-entry" rows="2" spellcheck="false" autocomplete="off" placeholder="ABCDDCBA…"></textarea>
+      <p class="hint">Letters A–D fill the grid in order. Use a dash to skip a question.</p>
+    </div>
+
+    <div class="meter">
+      <div class="bar"><i id="prog-fill"></i></div>
+      <output id="progress-label" for="quick-entry">0 / {{ num_questions }}</output>
+    </div>
+
+    <div class="sheet" tabindex="0" aria-label="Answer key grid">
+      <div class="sheet-grid" id="key-grid"></div>
+    </div>
+
+    <ul class="ready" id="ready">
+      <li id="chk-sheet"><span class="dot"></span><span>Add an answer sheet</span></li>
+      <li id="chk-key"><span class="dot"></span><span id="chk-key-text">Complete the answer key</span></li>
+    </ul>
+
+    <button class="btn btn-primary" id="scan-btn" disabled>Scan and grade</button>
+    <div class="after-scan">
+      <button class="btn btn-quiet" id="export-btn" hidden disabled>Download Excel report</button>
+    </div>
+  </section>
+</div>
+
+<!-- ════════ Right: results ════════ -->
+<div class="col" id="results-col" aria-live="polite">
+
+  <div id="loading" class="panel scanning">
+    <div class="track"><i></i></div>
+    <p id="loading-text">Reading the sheet…</p>
+  </div>
+
+  <div id="placeholder" class="panel empty">
+    <svg width="132" height="86" viewBox="0 0 132 86" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <g>
+        <circle cx="14" cy="14" r="8"/><circle cx="42" cy="14" r="8" fill="currentColor"/><circle cx="70" cy="14" r="8"/><circle cx="98" cy="14" r="8"/>
+        <circle cx="14" cy="43" r="8"/><circle cx="42" cy="43" r="8"/><circle cx="70" cy="43" r="8" fill="currentColor"/><circle cx="98" cy="43" r="8"/>
+        <circle cx="14" cy="72" r="8" fill="currentColor"/><circle cx="42" cy="72" r="8"/><circle cx="70" cy="72" r="8"/><circle cx="98" cy="72" r="8"/>
+      </g>
+    </svg>
+    <h2>No results yet</h2>
+    <p>Add a sheet and finish the answer key, then choose Scan and grade.</p>
+  </div>
+
+  <!-- Single result -->
+  <div id="single-result" class="col" hidden>
+    <section class="panel" aria-labelledby="h-result">
+      <div class="panel-head"><h2 id="h-result">Result</h2><span class="hint" id="r-file"></span></div>
+      <div class="verdict">
+        <div class="ring">
+          <svg width="136" height="136" viewBox="0 0 136 136" aria-hidden="true">
+            <circle class="trk" cx="68" cy="68" r="58" fill="none" stroke-width="10"/>
+            <circle class="val" id="ring-val" cx="68" cy="68" r="58" fill="none" stroke-width="10" stroke-dasharray="364.4" stroke-dashoffset="364.4"/>
+          </svg>
+          <div class="ring-label"><b id="r-pct">—</b><span id="r-grade"></span></div>
+        </div>
+        <div class="stats">
+          <div class="stat ok"><b id="r-correct">—</b><span>Correct</span></div>
+          <div class="stat bad"><b id="r-wrong">—</b><span>Wrong</span></div>
+          <div class="stat warn"><b id="r-blank">—</b><span>Blank</span></div>
+          <div class="stat"><b class="mono" id="r-id">—</b><span>Chest no.</span></div>
+          <div class="stat"><b id="r-company">—</b><span>Company</span></div>
+        </div>
+      </div>
+      <div class="notice" id="r-notice" hidden></div>
+
+      <div class="scan-img">
+        <button type="button" id="zoom-btn" aria-label="Enlarge annotated sheet"><img id="annotated-img" alt="Annotated answer sheet"/></button>
+        <div class="legend">
+          <span><i style="background:#00D250"></i>Correct</span>
+          <span><i style="background:#DC1E1E"></i>Wrong</span>
+          <span><i style="background:#FF8C00"></i>Right answer that was missed</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-map">
+      <div class="panel-head"><h2 id="h-map">Answer map</h2><span class="hint">Same layout as the sheet</span></div>
+      <div class="map" id="answer-map"></div>
+
+      <details class="more">
+        <summary>Question-by-question table</summary>
+        <div class="filters" role="group" aria-label="Filter questions">
+          <button class="chip-btn" data-f="all"     aria-pressed="true">All</button>
+          <button class="chip-btn" data-f="wrong"   aria-pressed="false">Wrong</button>
+          <button class="chip-btn" data-f="blank"   aria-pressed="false">Blank</button>
+          <button class="chip-btn" data-f="correct" aria-pressed="false">Correct</button>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Question</th><th>Marked</th><th>Key</th><th>Status</th></tr></thead>
+            <tbody id="breakdown-body"></tbody>
+          </table>
+        </div>
+      </details>
+    </section>
+  </div>
+
+  <!-- Bulk result -->
+  <div id="bulk-result" class="col" hidden>
+    <section class="panel" aria-labelledby="bulk-title">
+      <div class="panel-head"><h2 id="bulk-title">Batch results</h2><span class="hint" id="bulk-sub"></span></div>
+      <div class="stats" id="bulk-hero" style="margin-bottom:20px"></div>
+
+      <div class="table-tools">
+        <label class="sr" for="bulk-search">Search results</label>
+        <input id="bulk-search" type="search" placeholder="Search by file or chest no."/>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>File</th>
+              <th aria-sort="none" data-sort="chest"><button>Chest no.</button></th>
+              <th>Co.</th>
+              <th class="num" data-sort="score"><button>Score</button></th>
+              <th data-sort="pct"><button>Percent</button></th>
+              <th class="num">Wrong</th>
+              <th class="num">Blank</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="bulk-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+
+</main>
+
+<dialog id="dlg">
+  <div class="dlg-head"><h3 id="dlg-title">Details</h3><button class="x" id="dlg-close" aria-label="Close">✕</button></div>
+  <div class="dlg-body" id="dlg-body"></div>
+</dialog>
+
+<script>
+const NUM_Q    = {{ num_questions }};
+const PER_COL  = 25;
+const N_COLS   = Math.ceil(NUM_Q / PER_COL);
+const LABELS   = ["A","B","C","D"];
+const STORE    = "omrscan.key.v1";
+const selected = new Array(NUM_Q).fill(-1);
+
+let currentTab = "single", singleFile = null, bulkFiles = [];
+let lastResults = [], lastKey = [], bulkRows = [], sortKey = null, sortDir = 1;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const base = p => String(p || "").split(/[\\/]/).pop();
+
+/* ── Answer key grid ───────────────────────────────────────────────────── */
+const grid = $("key-grid");
+for (let c = 0; c < N_COLS; c++) {
+  const col  = document.createElement("div");
+  col.className = "sheet-col";
+  const from = c * PER_COL + 1, to = Math.min(NUM_Q, (c + 1) * PER_COL);
+  col.innerHTML = `<div class="sheet-col-head"><span>${from}–${to}</span>${LABELS.map(l => `<span>${l}</span>`).join("")}</div>`;
+  for (let q = from - 1; q < to; q++) {
+    const row = document.createElement("div");
+    row.className = "qrow"; row.id = "qrow-" + q;
+    row.innerHTML = `<span class="qn">${q + 1}</span>` + LABELS.map((l, i) =>
+      `<button class="bub" type="button" data-q="${q}" data-c="${i}" aria-pressed="false" aria-label="Question ${q + 1}, answer ${l}">${l}</button>`).join("");
+    col.appendChild(row);
+  }
+  grid.appendChild(col);
+}
+
+grid.addEventListener("click", e => {
+  const b = e.target.closest(".bub"); if (!b) return;
+  const q = +b.dataset.q, c = +b.dataset.c;
+  selected[q] = selected[q] === c ? -1 : c;     // click again to clear
+  paintRow(q); afterKeyChange(true);
+});
+
+function paintRow(q) {
+  const row = $("qrow-" + q);
+  row.classList.toggle("done", selected[q] !== -1);
+  row.querySelectorAll(".bub").forEach((b, i) => b.setAttribute("aria-pressed", String(i === selected[q])));
+}
+function paintAll() { for (let q = 0; q < NUM_Q; q++) paintRow(q); }
+
+function keyToText() { return selected.map(v => v < 0 ? "-" : LABELS[v]).join(""); }
+
+function afterKeyChange(syncText) {
+  const filled = selected.filter(v => v !== -1).length;
+  $("prog-fill").style.width = (filled / NUM_Q * 100) + "%";
+  $("progress-label").textContent = `${filled} / ${NUM_Q}`;
+  $("chk-key").classList.toggle("ok", filled === NUM_Q);
+  $("chk-key-text").textContent = filled === NUM_Q ? "Answer key is complete" : `Complete the answer key (${NUM_Q - filled} left)`;
+  if (syncText && document.activeElement !== $("quick-entry")) $("quick-entry").value = filled ? keyToText() : "";
+  try { localStorage.setItem(STORE, JSON.stringify(selected)); } catch (_) {}
+  updateScanBtn();
+}
+
+document.querySelectorAll("[data-fill]").forEach(b => b.addEventListener("click", () => {
+  selected.fill(+b.dataset.fill); paintAll(); afterKeyChange(true);
+}));
+$("clear-key").addEventListener("click", () => { selected.fill(-1); paintAll(); afterKeyChange(true); });
+
+// Typed / pasted key: A–D fill in order, - . _ ? * skip a question, everything else is ignored
+$("quick-entry").addEventListener("input", e => {
+  const tokens = [...e.target.value.toUpperCase()].filter(ch => /[A-D\-._?*]/.test(ch));
+  selected.fill(-1);
+  tokens.slice(0, NUM_Q).forEach((ch, i) => { selected[i] = LABELS.indexOf(ch); });
+  paintAll(); afterKeyChange(false);
+});
+$("quick-entry").addEventListener("blur", () => {
+  const filled = selected.some(v => v !== -1);
+  $("quick-entry").value = filled ? keyToText() : "";
+});
+
+// Restore the saved key
+try {
+  const saved = JSON.parse(localStorage.getItem(STORE) || "null");
+  if (Array.isArray(saved) && saved.length === NUM_Q) saved.forEach((v, i) => { selected[i] = [-1,0,1,2,3].includes(v) ? v : -1; });
+} catch (_) {}
+paintAll(); afterKeyChange(true);
+
+/* ── Tabs ──────────────────────────────────────────────────────────────── */
+function switchTab(tab) {
+  currentTab = tab;
+  ["single", "bulk"].forEach(t => {
+    $("tabbtn-" + t).setAttribute("aria-selected", String(t === tab));
+    $("tab-" + t).hidden = t !== tab;
+  });
+  updateScanBtn();
+}
+$("tabbtn-single").addEventListener("click", () => switchTab("single"));
+$("tabbtn-bulk").addEventListener("click",   () => switchTab("bulk"));
+
+/* ── File handling ─────────────────────────────────────────────────────── */
+function setSingle(file) {
+  singleFile = file || null;
+  const img = $("preview-single");
+  if (singleFile) {
+    const r = new FileReader();
+    r.onload = ev => { img.src = ev.target.result; img.style.display = "block"; };
+    r.readAsDataURL(singleFile);
+  } else img.style.display = "none";
+  updateScanBtn();
+}
+function setBulk(files) {
+  bulkFiles = Array.from(files).filter(f => f.type.startsWith("image/"));
+  $("bulk-list").innerHTML = bulkFiles.length
+    ? `<div class="filelist-count">${bulkFiles.length} sheet${bulkFiles.length === 1 ? "" : "s"} selected</div>` + bulkFiles.map(f => `<div>${esc(f.name)}</div>`).join("")
+    : "";
+  updateScanBtn();
+}
+$("fi-single").addEventListener("change", e => setSingle(e.target.files[0]));
+$("fi-bulk").addEventListener("change",   e => setBulk(e.target.files));
+
+["dz-single", "dz-bulk"].forEach(id => {
+  const dz = $(id);
+  dz.addEventListener("dragover",  e => { e.preventDefault(); dz.classList.add("drag"); });
+  dz.addEventListener("dragleave", () => dz.classList.remove("drag"));
+  dz.addEventListener("drop", e => {
+    e.preventDefault(); dz.classList.remove("drag");
+    id === "dz-single" ? setSingle(e.dataTransfer.files[0]) : setBulk(e.dataTransfer.files);
+  });
+});
+
+function updateScanBtn() {
+  const keyReady = selected.every(v => v !== -1);
+  const hasFile  = currentTab === "single" ? !!singleFile : bulkFiles.length > 0;
+  $("chk-sheet").classList.toggle("ok", hasFile);
+  $("scan-btn").disabled = !(keyReady && hasFile);
+}
+
+/* ── Scan ──────────────────────────────────────────────────────────────── */
+async function readJSON(resp) {
+  let data = null;
+  try { data = await resp.json(); } catch (_) {}
+  if (!resp.ok && !(data && data.error)) throw new Error(resp.status === 413 ? "The upload is too large. Try fewer sheets at a time." : `The server returned an error (${resp.status}).`);
+  return data || {};
+}
+
+$("scan-btn").addEventListener("click", async () => {
+  const err = $("err-box"); err.style.display = "none";
+  const bulk = currentTab === "bulk";
+  showLoading(bulk ? `Reading ${bulkFiles.length} sheet${bulkFiles.length === 1 ? "" : "s"}…` : "Reading the sheet…");
+  $("scan-btn").disabled = true;
+  const fd = new FormData();
+  fd.append("answer_key", JSON.stringify(selected));
+  try {
+    if (!bulk) {
+      fd.append("sheet", singleFile);
+      const data = await readJSON(await fetch("/scan_single", { method: "POST", body: fd }));
+      if (data.error) throw new Error(data.error);
+      renderSingle(data);
+      lastResults = [data];
+    } else {
+      bulkFiles.forEach(f => fd.append("sheets", f));
+      const data = await readJSON(await fetch("/scan_bulk", { method: "POST", body: fd }));
+      if (data.error) throw new Error(data.error);
+      renderBulk(data.results);
+      lastResults = data.results.filter(r => !r.error);
+    }
+    lastKey = [...selected];
+    const eb = $("export-btn"); eb.hidden = false; eb.disabled = lastResults.length === 0;
+    if (window.matchMedia("(max-width:1020px)").matches) $("results-col").scrollIntoView({ block: "start" });
+  } catch (e) {
+    hideLoading();
+    err.textContent = e.message; err.style.display = "block";
+    $("placeholder").hidden = false;
+  } finally { updateScanBtn(); }
+});
+
+$("export-btn").addEventListener("click", async () => {
+  const results = lastResults.map(({ annotated_b64, ...rest }) => rest);   // keep the upload small
+  const resp = await fetch("/export_excel", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ answer_key: lastKey, results })
+  });
+  if (!resp.ok) { const e = $("err-box"); e.textContent = "The Excel file could not be created. Try again."; e.style.display = "block"; return; }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(await resp.blob()); a.download = "omr_results.xlsx"; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+});
+
+/* ── Render helpers ────────────────────────────────────────────────────── */
+function showLoading(text) {
+  $("placeholder").hidden = true; $("single-result").hidden = true; $("bulk-result").hidden = true;
+  $("loading-text").textContent = text; $("loading").style.display = "block";
+}
+function hideLoading() { $("loading").style.display = "none"; }
+
+const gradeOf = p => p >= 90 ? "A+" : p >= 80 ? "A" : p >= 70 ? "B" : p >= 60 ? "C" : p >= 50 ? "D" : "F";
+const toneOf  = p => p >= 60 ? "var(--ok)" : p >= 40 ? "var(--warn)" : "var(--bad)";
+
+function answerMap(breakdown) {
+  let html = "";
+  for (let c = 0; c < N_COLS; c++) {
+    html += `<div class="map-col">`;
+    breakdown.slice(c * PER_COL, (c + 1) * PER_COL).forEach(b => {
+      const title = `Question ${b.question}: marked ${b.detected === "-" ? "nothing" : b.detected}, key ${b.correct}`;
+      html += `<div class="mc ${b.status}" title="${esc(title)}"><i>${b.question}</i><b>${esc(b.detected)}</b>${b.status === "wrong" ? `<small>${esc(b.correct)}</small>` : ""}</div>`;
+    });
+    html += `</div>`;
+  }
+  return html;
+}
+const rowsHTML = list => list.map(b =>
+  `<tr><td class="mono">${b.question}</td><td class="mono">${esc(b.detected)}</td><td class="mono">${esc(b.correct)}</td><td><span class="pill ${b.status}">${b.status}</span></td></tr>`).join("");
+
+/* ── Single result ─────────────────────────────────────────────────────── */
+let currentBreakdown = [];
+function renderSingle(d) {
+  hideLoading();
+  currentBreakdown = d.breakdown;
+  $("r-file").textContent = base(d.filename);
+  $("r-pct").textContent = d.score_pct + "%";
+  $("r-grade").textContent = `Grade ${gradeOf(d.score_pct)}`;
+  $("r-correct").textContent = d.correct;
+  $("r-wrong").textContent = d.wrong;
+  $("r-blank").textContent = d.blank;
+  $("r-id").textContent = d.student_id;
+  $("r-company").textContent = d.company || "?";
+  $("annotated-img").src = "data:image/png;base64," + d.annotated_b64;
+
+  const notes = [];
+  if (!d.sheet_detected) notes.push("The sheet edges were not found, so the whole photo was read. Retake the picture with all four corners visible if results look off.");
+  if (String(d.student_id).includes("?")) notes.push("The chest number could not be read in full. Check the filled bubbles on the sheet.");
+  if ((d.company || "?") === "?") notes.push("No company bubble was detected.");
+  const n = $("r-notice"); n.hidden = !notes.length; n.innerHTML = notes.map(esc).join("<br>");
+
+  $("answer-map").innerHTML = answerMap(d.breakdown);
+  setFilter("all");
+  $("single-result").hidden = false;
+
+  const C = 2 * Math.PI * 58, ring = $("ring-val");
+  ring.style.stroke = toneOf(d.score_pct);
+  ring.style.strokeDashoffset = C;
+  requestAnimationFrame(() => requestAnimationFrame(() => { ring.style.strokeDashoffset = C * (1 - d.score_pct / 100); }));
+}
+
+function setFilter(f) {
+  document.querySelectorAll(".filters [data-f]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.f === f)));
+  $("breakdown-body").innerHTML = rowsHTML(f === "all" ? currentBreakdown : currentBreakdown.filter(b => b.status === f));
+}
+document.querySelectorAll(".filters [data-f]").forEach(b => b.addEventListener("click", () => setFilter(b.dataset.f)));
+$("zoom-btn").addEventListener("click", () => openDialog("Annotated sheet", `<img src="${$("annotated-img").src}" alt="Annotated answer sheet, enlarged"/>`));
+
+/* ── Bulk result ───────────────────────────────────────────────────────── */
+function renderBulk(results) {
+  hideLoading();
+  bulkRows = results.map((r, i) => ({ ...r, _i: i }));
+  const ok = bulkRows.filter(r => !r.error), failed = bulkRows.length - ok.length;
+  const pcts = ok.map(r => r.score_pct);
+  const avg = pcts.length ? (pcts.reduce((a, b) => a + b, 0) / pcts.length).toFixed(1) : "—";
+  $("bulk-title").textContent = `${ok.length} sheet${ok.length === 1 ? "" : "s"} graded`;
+  $("bulk-sub").textContent = failed ? `${failed} could not be read` : "";
+  $("bulk-hero").innerHTML = `
+    <div class="stat"><b>${ok.length}</b><span>Graded</span></div>
+    <div class="stat"><b>${avg}${pcts.length ? "%" : ""}</b><span>Average</span></div>
+    <div class="stat ok"><b>${pcts.length ? Math.max(...pcts) + "%" : "—"}</b><span>Highest</span></div>
+    <div class="stat bad"><b>${pcts.length ? Math.min(...pcts) + "%" : "—"}</b><span>Lowest</span></div>`;
+  sortKey = null; $("bulk-search").value = "";
+  document.querySelectorAll("th[data-sort]").forEach(th => th.setAttribute("aria-sort", "none"));
+  drawBulk();
+  $("bulk-result").hidden = false;
+}
+
+function drawBulk() {
+  const q = $("bulk-search").value.trim().toLowerCase();
+  const ids = {};  bulkRows.forEach(r => { if (!r.error && !String(r.student_id).includes("?")) ids[r.student_id] = (ids[r.student_id] || 0) + 1; });
+  let rows = bulkRows.filter(r => !q || base(r.filename).toLowerCase().includes(q) || String(r.student_id || "").toLowerCase().includes(q));
+  if (sortKey) {
+    const val = r => r.error ? -1 : sortKey === "chest" ? String(r.student_id) : sortKey === "score" ? r.score : r.score_pct;
+    rows = [...rows].sort((a, b) => (val(a) > val(b) ? 1 : val(a) < val(b) ? -1 : 0) * sortDir);
+  }
+  $("bulk-body").innerHTML = rows.map(r => {
+    if (r.error) return `<tr><td class="fname" title="${esc(base(r.filename))}">${esc(base(r.filename))}</td><td colspan="7"><span class="pill wrong">Not read</span> <span class="hint">${esc(r.error)}</span></td></tr>`;
+    const flags = [];
+    if (String(r.student_id).includes("?")) flags.push("unreadable");
+    else if (ids[r.student_id] > 1) flags.push("duplicate");
+    const flag = flags.map(f => ` <span class="pill warn" title="${f === "duplicate" ? "Another sheet has the same chest number" : "Some chest digits were not detected"}">${f}</span>`).join("");
+    return `<tr>
+      <td class="fname" title="${esc(base(r.filename))}">${esc(base(r.filename))}</td>
+      <td class="mono">${esc(r.student_id)}${flag}</td>
+      <td class="mono">${esc(r.company || "?")}</td>
+      <td class="num mono">${r.score}/${r.total}</td>
+      <td><div class="pbar"><i style="--w:${r.score_pct}%;--c:${toneOf(r.score_pct)}"></i><span class="mono">${r.score_pct}%</span></div></td>
+      <td class="num mono">${r.wrong}</td><td class="num mono">${r.blank}</td>
+      <td><button class="link-btn" data-view="${r._i}">View</button></td></tr>`;
+  }).join("") || `<tr><td colspan="8" class="hint" style="text-align:center;padding:24px">No sheets match your search.</td></tr>`;
+}
+$("bulk-search").addEventListener("input", drawBulk);
+$("bulk-body").addEventListener("click", e => { const b = e.target.closest("[data-view]"); if (b) showDetail(+b.dataset.view); });
+document.querySelectorAll("th[data-sort]").forEach(th => th.querySelector("button").addEventListener("click", () => {
+  const k = th.dataset.sort;
+  sortDir = sortKey === k ? -sortDir : 1; sortKey = k;
+  document.querySelectorAll("th[data-sort]").forEach(t => t.setAttribute("aria-sort", "none"));
+  th.setAttribute("aria-sort", sortDir === 1 ? "ascending" : "descending");
+  drawBulk();
+}));
+
+function showDetail(i) {
+  const r = bulkRows[i]; if (!r || r.error) return;
+  openDialog(`Chest ${r.student_id} · Company ${r.company || "?"} · ${r.score_pct}%`,
+    `<div class="map" style="margin-bottom:20px">${answerMap(r.breakdown)}</div>` +
+    (r.annotated_b64 ? `<img src="data:image/png;base64,${r.annotated_b64}" alt="Annotated sheet for chest ${esc(r.student_id)}"/>` : ""));
+}
+
+/* ── Dialog ────────────────────────────────────────────────────────────── */
+const dlg = $("dlg");
+function openDialog(title, html) { $("dlg-title").textContent = title; $("dlg-body").innerHTML = html; dlg.showModal(); $("dlg-body").scrollTop = 0; }
+$("dlg-close").addEventListener("click", () => dlg.close());
+dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
+</script>
+</body>
+</html>
